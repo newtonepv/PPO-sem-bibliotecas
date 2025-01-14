@@ -2,7 +2,7 @@ import pygame
 import sys
 import random
 import math
-from backward_functioning import Valor, MLP
+from motor_autograd import Valor, MLP
 from copy import deepcopy
 
 def index_da_acao_tomada(lista: list[Valor]) -> int:
@@ -82,7 +82,7 @@ ARQUITETURA = [8,64,3]
 #initializing variables
 frames_sem_acao = 0
 
-rede_nova_1 = MLP(ARQUITETURA)
+rede_nova_1 = MLP(ARQUITETURA, fun_atv_na_ultima_camada= True)
 rede_velha_1 = deepcopy(rede_nova_1)
 
 index_acao_antes_ultima_batida_1:int = -1
@@ -90,7 +90,7 @@ recompensas_esperadas_1 = []
 recompensas_1 = []
 concordancia_1 = []
 
-rede_nova_2 = MLP(ARQUITETURA)
+rede_nova_2 = MLP(ARQUITETURA, fun_atv_na_ultima_camada= True)
 rede_velha_2 = deepcopy(rede_nova_2)
 
 index_acao_antes_ultima_batida_2:int = -1
@@ -102,6 +102,8 @@ concordancia_2 = []
 # Initialize Pygame
 pygame.init()
 
+
+vel_sim = 1
 # Constants
 FPS = 60
 WIDTH = 800
@@ -109,16 +111,19 @@ HEIGHT = 600
 PADDLE_WIDTH = 15
 PADDLE_HEIGHT = 90
 BALL_SIZE = 15
-PADDLE_SPEED = 5
-INITIAL_BALL_SPEED = 2
-MAX_BALL_SPEED = 15
-SPEED_INCREASE = 0.5
+paddle_speed = 5*vel_sim
+init_ball_speed = 2*vel_sim
+max_ball_speed = 15*vel_sim
+speed_increase = 0.5*vel_sim
 MAX_ANGLE = 75
 RANDOM_ANGLE_RANGE = 15  # Maximum degrees of random variation
 
 # Colors
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
+
+def atualizar_velocidades(vel_sim):
+    return 5*vel_sim,2*vel_sim,15*vel_sim,0.5*vel_sim
 
 # Create the screen
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
@@ -134,9 +139,9 @@ player1_movement = 0  # -1 for up, 0 for stay, 1 for down
 player2_movement = 0
 
 # Ball velocity components
-current_ball_speed = INITIAL_BALL_SPEED
-ball_dx = INITIAL_BALL_SPEED * random.choice((1, -1))
-ball_dy = INITIAL_BALL_SPEED * random.choice((1, -1))
+current_ball_speed = init_ball_speed
+ball_dx = init_ball_speed * random.choice((1,0.5,-0.5 -1))
+ball_dy = init_ball_speed * random.choice((1,0.5,-0.5 -1))
 
 # Score
 player1_score = 0
@@ -176,10 +181,10 @@ def calculate_new_velocity(ball_rect, paddle_rect, current_dx, speed):
 def reset_ball():
     """Reset ball to center with initial speed"""
     global current_ball_speed, ball_dx, ball_dy
-    current_ball_speed = INITIAL_BALL_SPEED
+    current_ball_speed = init_ball_speed
     ball.center = (WIDTH//2, HEIGHT//2)
-    ball_dx = INITIAL_BALL_SPEED * random.choice((1, -1))
-    ball_dy = INITIAL_BALL_SPEED * random.choice((1, -1))
+    ball_dx = init_ball_speed * random.choice((1,0.5,-0.5 -1))
+    ball_dy = init_ball_speed * random.choice((1,0.5,-0.5 -1))
 
 
 
@@ -204,7 +209,6 @@ while True:
         player1_movement = acao_1-1 #agora vai de -1,1 no lugar de ir de 0,2  
 
         racio_2, acao_2 = pegar_racio_e_acao(estado,rede_nova_2,rede_velha_2)
-        print(round(racio_2.valor_numerico,2), end=",", flush=True)
         concordancia_2.append(racio_2)
         player2_movement = acao_2-1 
 
@@ -218,18 +222,26 @@ while True:
             if event.key == pygame.K_q:
                 pygame.quit()
                 sys.exit()
+            elif event.key == pygame.K_UP:
+                vel_sim+=1
+                paddle_speed,init_ball_speed,max_ball_speed,speed_increase=atualizar_velocidades(vel_sim)
+                print("vel sim = "+str(vel_sim))
+            elif event.key == pygame.K_DOWN:
+                vel_sim-=1
+                paddle_speed,init_ball_speed,max_ball_speed,speed_increase=atualizar_velocidades(vel_sim)
+                print("vel sim = "+str(vel_sim))
 
     
     # Apply paddle movement based on states
     if player1_movement == -1 and player1.top > 0:
-        player1.y -= PADDLE_SPEED
+        player1.y -= paddle_speed
     elif player1_movement == 1 and player1.bottom < HEIGHT:
-        player1.y += PADDLE_SPEED
+        player1.y += paddle_speed
 
     if player2_movement == -1 and player2.top > 0:
-        player2.y -= PADDLE_SPEED
+        player2.y -= paddle_speed
     elif player2_movement == 1 and player2.bottom < HEIGHT:
-        player2.y += PADDLE_SPEED
+        player2.y += paddle_speed
     
     # Ball movement
     ball.x += ball_dx
@@ -255,8 +267,6 @@ while True:
         player2_score += 1
         reset_ball()
         #carregar nova rede
-        print(len(recompensas_2))
-        print(len(recompensas_1))
         carregar_nova_rede(rede_nova_1,rede_velha_1,concordancia_1,recompensas_1, recompensas_esperadas_1)
         carregar_nova_rede(rede_nova_2,rede_velha_2,concordancia_2,recompensas_2, recompensas_esperadas_2)
         index_acao_antes_ultima_batida_1=-1
@@ -273,8 +283,6 @@ while True:
         player1_score += 1
         reset_ball()
         #carregar nova rede
-        print(len(recompensas_2))
-        print(len(recompensas_1))
         carregar_nova_rede(rede_nova_1,rede_velha_1,concordancia_1,recompensas_1, recompensas_esperadas_1)
         carregar_nova_rede(rede_nova_2,rede_velha_2,concordancia_2,recompensas_2, recompensas_esperadas_2)
         index_acao_antes_ultima_batida_1=-1
@@ -287,7 +295,7 @@ while True:
         adicionar_recompensa(PREMIO_TOQUE,index_acao_antes_ultima_batida_1,recompensas_1)
 
         ball.left = player1.right
-        current_ball_speed = min(current_ball_speed + SPEED_INCREASE, MAX_BALL_SPEED)
+        current_ball_speed = min(current_ball_speed + speed_increase, max_ball_speed)
         ball_dx, ball_dy = calculate_new_velocity(ball, player1, ball_dx, current_ball_speed)
         
         
@@ -296,7 +304,7 @@ while True:
         adicionar_recompensa(PREMIO_TOQUE,index_acao_antes_ultima_batida_2, recompensas_2)
 
         ball.right = player2.left
-        current_ball_speed = min(current_ball_speed + SPEED_INCREASE, MAX_BALL_SPEED)
+        current_ball_speed = min(current_ball_speed + speed_increase, max_ball_speed)
         ball_dx, ball_dy = calculate_new_velocity(ball, player2, ball_dx, current_ball_speed)       
 
 
@@ -314,6 +322,5 @@ while True:
     screen.blit(speed_text, (WIDTH//2 - speed_text.get_width()//2, 50))
     
     #print(recompensas_1)
-
     pygame.display.flip()
     clock.tick(FPS)

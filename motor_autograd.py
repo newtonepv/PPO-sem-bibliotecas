@@ -74,13 +74,25 @@ class Valor:
         saida = Valor(math.exp(x), (self,), 'exp')
 
         def setar_grad_anteriores():
-            
-            
             self.gradiente +=(saida.valor_numerico*saida.gradiente) if self.calc_der else 0
         
         saida._setar_grad_anteriores = setar_grad_anteriores
         return saida
     
+    def sigmoid(self):
+        x = self.valor_numerico
+        if x > 15:  # Increased threshold for better stability
+            sigx = 0.99999
+        elif x < -15:
+            sigx = 0.00001
+        else:
+            sigx = 1/(1 + math.exp(-x))
+        saida = Valor(sigx, (self,), 'sig')
+        def setar_grad_anteriores():
+            self.gradiente+=sigx*(1-sigx)*saida.gradiente
+        saida._setar_grad_anteriores = setar_grad_anteriores
+        return saida
+
     def __neg__(self)->'Valor': # -self
         return self * -1
 
@@ -130,8 +142,9 @@ import random
 from typing import Union, List# assim o codigo é usavel no python >3.10
 
 class No:
-    def __init__(self, qtd_entradas:int, usar_fun_ativacao:bool = True):
-        self.usar_fun_ativacao = usar_fun_ativacao
+    def __init__(self, qtd_entradas:int, fun_atv:int):
+        "na funcao de ativacao use 0-nenhuma | 1-tanh | 2-sigmoid"
+        self.fun_atv = fun_atv
         self.pesos = [Valor(random.uniform(-1,1),ajustavel=True) for _ in range(0,qtd_entradas)] #esta dentro de [] pq é uma lista, pra poder por um for no meio
         self.vies = Valor(random.uniform(-1,1),ajustavel=True)
 
@@ -144,8 +157,10 @@ class No:
         out = sum((e1*p1 for (e1, p1) in zip(self.pesos, entradas)))
         out += self.vies
 
-        if(self.usar_fun_ativacao):
+        if(self.fun_atv==1):
             out = out.tanh()
+        if(self.fun_atv==2):
+            out = out.sigmoid()
 
         return out
     
@@ -154,11 +169,12 @@ class No:
 
 
 class Camada:
-    def __init__(self, qtd_entradas:int, qtd_nos:int, usar_fun_ativacao:bool):
-        self.usar_fun_ativacao = usar_fun_ativacao
+    def __init__(self, qtd_entradas:int, qtd_nos:int, fun_atv:int):
+        "na funcao de ativacao use 0 para nenhuma 1 para tanh 2 para sigmoid"
+        self.fun_atv = fun_atv
         self.qtd_nos = qtd_nos
         self.qtd_entradas = qtd_entradas
-        self.nos = [No(qtd_entradas, usar_fun_ativacao) for _ in range(qtd_nos)]
+        self.nos = [No(qtd_entradas, fun_atv) for _ in range(qtd_nos)]
     
     def __call__(self, entradas:List[Union[float,int,Valor]]) -> List[Valor]:
         saidas = [ no(entradas) for no in self.nos]
@@ -175,8 +191,11 @@ class Camada:
         
 
 class MLP:
-    def __init__(self, qtd_neuronios_em_cada_camada:list[int]):
-        '''coloque na primeira posição do vetor a quantidade de entradas da rede neural'''
+    def __init__(self, qtd_neuronios_em_cada_camada:list[int], fun_atv:list[int]):
+        '''coloque na primeira posição do vetor a quantidade de entradas da rede neural
+            nas funcoes de ativacao use 0 para nenhuma 1 para tanh 2 para sigmoid, nao pode por na entrada,
+            ou seja, o tamanho desse array+1 é o tamanho do qtd_neuronios_em_cada_camada'''
+        assert(len(qtd_neuronios_em_cada_camada)-1 == len(fun_atv))
 
         if not all(isinstance(x, int) and x > 0 for x in qtd_neuronios_em_cada_camada):
             raise ValueError("Todos os valores devem ser inteiros positivos")
@@ -191,14 +210,11 @@ class MLP:
             raise ValueError("A rede neural precisa ter no mínimo 1 camada, lembre que o primeiro valor do array é a qtd de entradas")
 
 
-        for i in range(1, camadas_mais_entrada-1):#a ultima nao vai assim pq nao usa ativação
+        for i in range(1, camadas_mais_entrada):
             self.camadas.append(Camada(qtd_neuronios_em_cada_camada[i-1],
                                         qtd_neuronios_em_cada_camada[i],
-                                        usar_fun_ativacao=True))
-
-        self.camadas.append(Camada(qtd_neuronios_em_cada_camada[camadas_mais_entrada-2], 
-                                    qtd_neuronios_em_cada_camada[camadas_mais_entrada-1],
-                                    usar_fun_ativacao=False))    
+                                        fun_atv[i-1]))
+  
 
     def __call__(self, entradas:List[Union[float,int,Valor]])->List[Valor]:
         saidas = entradas
