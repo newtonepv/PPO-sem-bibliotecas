@@ -2,101 +2,52 @@ import pygame
 import sys
 import random
 import math
-from motor_autograd import Valor, MLP
 from copy import deepcopy
+from politicas import Politica
 
-def index_da_acao_tomada(lista: list[Valor]) -> int:
-    # Calculate total weight
-    total = sum(v.valor_numerico for v in lista)
+
+def plotar_recompensas(historico_recompensas):
+    """Plot the rewards history"""
+    plt.figure(figsize=(10, 5))
     
-    # Generate random value between 0 and total
-    r = random.uniform(0, total)
+    # Raw data
+    plt.plot(historico_recompensas, alpha=0.3, color='blue', label='Raw')
     
-    # Find the index
-    acumulado = 0
-    for i, v in enumerate(lista):
-        acumulado += v.valor_numerico
-        if acumulado > r:
-            return i
-            
-    # Fallback to last index (in case of floating point rounding issues)
-    return len(lista) - 1
-
-
+    # Smoothed data
+    window = 100
+    smoothed = [sum(historico_recompensas[max(0,i-window):i])/min(i,window) 
+                for i in range(1,len(historico_recompensas)+1)]
+    plt.plot(smoothed, color='red', label='Smoothed')
+    
+    plt.title('Recompensas por Episódio')
+    plt.xlabel('Episódio')
+    plt.ylabel('Recompensa Total')
+    plt.grid(True)
+    plt.legend()
+    
+    # Save and show
+    plt.savefig('training_rewards.png')
+    plt.show()
 
 #coisas de ia
-APRENDIZADO = 0.01
-LIMITE_RACIO = 1.2
-
-def pegar_racio_e_acao(estado: list, rede_nova:MLP, rede_velha:MLP)-> tuple[Valor, int]:
-        resposta_da_rede_nova = rede_nova(estado)
-        resposta_da_rede_velha = rede_velha(estado)
-
-        acao_tomada = index_da_acao_tomada(resposta_da_rede_nova)
-
-        chance_da_nova_tomar_acao = resposta_da_rede_nova[acao_tomada]
-        chance_da_velha_tomar_acao = resposta_da_rede_velha[acao_tomada]
-
-        return (chance_da_nova_tomar_acao/chance_da_velha_tomar_acao,acao_tomada)
-
-def carregar_nova_rede(rede_nova:MLP, rede_velha:MLP, concordancia:list[Valor], recompensas:list[float], recompensas_esperadas:list[float]):
-    rede_velha = deepcopy(rede_nova)
-
-    assert(len(concordancia)==len(recompensas)==len(recompensas_esperadas))
-
-    for c,r,re in zip(concordancia,recompensas,recompensas_esperadas):
-
-        if(c.valor_numerico>LIMITE_RACIO):
-            c.valor_numerico = c.valor_numerico-(c.valor_numerico-LIMITE_RACIO)
-        elif(c.valor_numerico<-LIMITE_RACIO):
-            c.valor_numerico = c.valor_numerico+((-LIMITE_RACIO)-c.valor_numerico)
-
-        nova_perda:Valor=c*(r-re)
-        nova_perda.derivadas()
-
-        for p in rede_nova.parametros():
-            p.valor_numerico = p.valor_numerico+(APRENDIZADO*p.gradiente)
-            p.gradiente = 0
-
-    concordancia.clear()
-    recompensas.clear()
-    recompensas_esperadas.clear()
-    
-
-def adicionar_recompensa(recompensa:float, index_acao_premiada:int, vetor_premios:list):
-    for i in range(SEGUNDOS_PREMIADOS_ANTES_DA_ACAO*ACOES_POR_SEGUNDO):
-
-        index = (index_acao_premiada)-i
-        if(index < 0):
-            break
-
-        vetor_premios[index] += recompensa*(DIMINUICAO_DO_PREMIO**i)
-
 SEGUNDOS_PREMIADOS_ANTES_DA_ACAO = 6
 ACOES_POR_SEGUNDO = 10
-DIMINUICAO_DO_PREMIO = 0.93
+POLITICA = Politica(
+    camadas = [8,64,3],
+    diminuicao_nota= 0.93,
+    qtd_acoes_afetadas_pela_recompensa=SEGUNDOS_PREMIADOS_ANTES_DA_ACAO*ACOES_POR_SEGUNDO,
+    vel_aprendizagem=0.01,
+    limite_concordancia=0.2
+)
 PREMIO_TOQUE = 1
-PREMIO_PONTO = 10
-ARQUITETURA = [8,64,3]
+PREMIO_PONTO = 1.5
 
 #initializing variables
 frames_sem_acao = 0
-
-rede_nova_1 = MLP(ARQUITETURA, fun_atv_na_ultima_camada= True)
-rede_velha_1 = deepcopy(rede_nova_1)
-
+ag_1 = deepcopy(POLITICA)
+ag_2 = deepcopy(POLITICA)
 index_acao_antes_ultima_batida_1:int = -1
-recompensas_esperadas_1 = []
-recompensas_1 = []
-concordancia_1 = []
-
-rede_nova_2 = MLP(ARQUITETURA, fun_atv_na_ultima_camada= True)
-rede_velha_2 = deepcopy(rede_nova_2)
-
 index_acao_antes_ultima_batida_2:int = -1
-recompensas_esperadas_2 = []
-recompensas_2 = []
-concordancia_2 = []
 
 
 # Initialize Pygame
@@ -179,37 +130,37 @@ def calculate_new_velocity(ball_rect, paddle_rect, current_dx, speed):
     return new_dx, new_dy
 
 def reset_ball():
-    """Reset ball to center with initial speed"""
+    """Reset ball to center with initial speed and random direction"""
     global current_ball_speed, ball_dx, ball_dy
     current_ball_speed = init_ball_speed
-    ball.center = (WIDTH//2, HEIGHT//2)
-    ball_dx = init_ball_speed * random.choice((1,0.5,-0.5 -1))
-    ball_dy = init_ball_speed * random.choice((1,0.5,-0.5 -1))
+    ball.center = (WIDTH // 2, HEIGHT // 2)
+    
+    # Define random speed components ensuring vx ≠ 0
+    ball_dx = random.uniform(0.5, 1.0) * current_ball_speed * random.choice((-1, 1))
+    ball_dy = random.uniform(0.5, 1.0) * current_ball_speed * random.choice((-1, 1))
+    
+    # Normalize the velocity to ensure a consistent speed
+    velocity_length = math.sqrt(ball_dx ** 2 + ball_dy ** 2)
+    ball_dx = (ball_dx / velocity_length) * current_ball_speed
+    ball_dy = (ball_dy / velocity_length) * current_ball_speed
 
 
 
 
 
 # Game loop
-clock = pygame.time.Clock()
 while True:
+    random.seed()  # Inicializa o gerador de números aleatórios com base no tempo atual
+
     frames_sem_acao+=1
     if(frames_sem_acao%int(FPS/ACOES_POR_SEGUNDO)==0):
-
-        recompensas_1.append(0)
-        recompensas_esperadas_1.append(0)
-        recompensas_2.append(0)
-        recompensas_esperadas_2.append(0)
-
         #tomar acao
         estado:list = [player1.x, player1.y, player2.x, player2.y, ball.x, ball.y, ball_dx, ball_dy]
 
-        racio_1, acao_1 = pegar_racio_e_acao(estado,rede_nova_1,rede_velha_1)
-        concordancia_1.append(racio_1)
+        acao_1 = ag_1(estado)
         player1_movement = acao_1-1 #agora vai de -1,1 no lugar de ir de 0,2  
 
-        racio_2, acao_2 = pegar_racio_e_acao(estado,rede_nova_2,rede_velha_2)
-        concordancia_2.append(racio_2)
+        acao_2 = ag_2(estado)
         player2_movement = acao_2-1 
 
 
@@ -259,40 +210,41 @@ while True:
     # Scoring
     if ball.left <= 0: #PONTO2
         diminuicao = -PREMIO_PONTO*((math.sqrt((ball.y-player1.y)**2)/HEIGHT)+1)
-        adicionar_recompensa(diminuicao,len(recompensas_1)-1,recompensas_1)#penalizar jogador 1
+        ag_1.premiar(diminuicao)#penalizar jogador 1
+        
         if(index_acao_antes_ultima_batida_2!=-1):
             recompensa = PREMIO_PONTO*((math.sqrt((ball.y-player1.y)**2)/HEIGHT)+1)#enquanto mais longe estiver mais ponto ganha
-            adicionar_recompensa(recompensa,index_acao_antes_ultima_batida_2,recompensas_2)
+            ag_2.premiar(recompensa,index_acao_antes_ultima_batida_2)
 
         player2_score += 1
         reset_ball()
         #carregar nova rede
-        carregar_nova_rede(rede_nova_1,rede_velha_1,concordancia_1,recompensas_1, recompensas_esperadas_1)
-        carregar_nova_rede(rede_nova_2,rede_velha_2,concordancia_2,recompensas_2, recompensas_esperadas_2)
+        ag_1.atualizar()
+        ag_2.atualizar()
         index_acao_antes_ultima_batida_1=-1
         index_acao_antes_ultima_batida_2=-1
     
     if ball.right >= WIDTH: #PONTO1
         diminuicao = -PREMIO_PONTO*((math.sqrt((ball.y-player2.y)**2)/HEIGHT)+1)
-        adicionar_recompensa(diminuicao,len(recompensas_2)-1,recompensas_2)#penalizar jogador 1
+        ag_2.premiar(diminuicao)
+
         if(index_acao_antes_ultima_batida_1 != -1):#so ganha ponto se tiver batido
             recompensa = PREMIO_PONTO*((math.sqrt((ball.y-player2.y)**2)/HEIGHT)+1)
-            adicionar_recompensa(recompensa,index_acao_antes_ultima_batida_1,recompensas_1)#beneficiar jogador 1
-
+            ag_1.premiar(recompensa, index_acao_antes_ultima_batida_1)
 
         player1_score += 1
         reset_ball()
         #carregar nova rede
-        carregar_nova_rede(rede_nova_1,rede_velha_1,concordancia_1,recompensas_1, recompensas_esperadas_1)
-        carregar_nova_rede(rede_nova_2,rede_velha_2,concordancia_2,recompensas_2, recompensas_esperadas_2)
+        ag_1.atualizar()
+        ag_2.atualizar()
         index_acao_antes_ultima_batida_1=-1
         index_acao_antes_ultima_batida_2=-1
 
 
     # Paddle collisions with speed increase
     if ball.colliderect(player1): #TOQUE1
-        index_acao_antes_ultima_batida_1 = len(recompensas_1)-1
-        adicionar_recompensa(PREMIO_TOQUE,index_acao_antes_ultima_batida_1,recompensas_1)
+        index_acao_antes_ultima_batida_1 = ag_1.get_index_ultima_acao()
+        ag_1.premiar(PREMIO_TOQUE)
 
         ball.left = player1.right
         current_ball_speed = min(current_ball_speed + speed_increase, max_ball_speed)
@@ -300,8 +252,8 @@ while True:
         
         
     if ball.colliderect(player2):#TOQUE2
-        index_acao_antes_ultima_batida_2 = len(recompensas_2)-1
-        adicionar_recompensa(PREMIO_TOQUE,index_acao_antes_ultima_batida_2, recompensas_2)
+        index_acao_antes_ultima_batida_2 = ag_2.get_index_ultima_acao()
+        ag_2.premiar(PREMIO_TOQUE)
 
         ball.right = player2.left
         current_ball_speed = min(current_ball_speed + speed_increase, max_ball_speed)
@@ -323,4 +275,3 @@ while True:
     
     #print(recompensas_1)
     pygame.display.flip()
-    clock.tick(FPS)

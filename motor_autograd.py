@@ -233,7 +233,7 @@ class MLP:
         for p in self.parametros():
             p.gradiente = 0
 
-'''mlp = MLP([3, 4,  4, 1])
+mlp = MLP([3, 44,  44, 1], [1,1,1])
 
 entradas_exemplo = [
     [2.0, 3.0, -1.0],
@@ -252,7 +252,6 @@ while(True):
     print("")
     print("perda total = "+ str(perda_total))
 
-    input()
 
     perda_total.derivadas()
     for p in mlp.parametros():
@@ -269,4 +268,4 @@ perdas = [((saida[0]-saida_verdade)**2 )for saida, saida_verdade in zip(saidas ,
 perda_total = sum(perdas)
 
 print("")
-print("perda total = "+ str(perda_total))'''
+print("perda total = "+ str(perda_total))
